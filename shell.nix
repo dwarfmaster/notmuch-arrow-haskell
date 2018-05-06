@@ -6,6 +6,7 @@ let
 
   f = { mkDerivation, array, base, bytestring, containers
       , directory, mtl, notmuch, stdenv, transformers
+      , template-haskell
       }:
       mkDerivation {
         pname = "notmuch-arrow-haskell";
@@ -13,6 +14,7 @@ let
         src = ./.;
         libraryHaskellDepends = [
           array base bytestring containers directory mtl transformers
+          template-haskell
         ];
         librarySystemDepends = [ notmuch ];
         license = stdenv.lib.licenses.mit;

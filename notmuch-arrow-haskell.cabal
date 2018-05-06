@@ -14,11 +14,12 @@ cabal-version:       >=1.10
 library
   exposed-modules:     System.Mail.Notmuch
   other-modules:       System.Mail.Notmuch.Binding
+                     , System.Mail.Notmuch.Wrapper
   extra-libraries:     notmuch
   hs-source-dirs:      src/
   build-depends:       base >= 4.9 && < 4.10
                      , array, containers, transformers, directory
-                     , mtl, bytestring
+                     , mtl, bytestring, template-haskell
   build-tools:         hsc2hs
   ghc-options:         -Wall
   default-language:    Haskell2010

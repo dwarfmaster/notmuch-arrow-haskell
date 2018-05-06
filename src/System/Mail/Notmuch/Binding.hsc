@@ -38,32 +38,32 @@ showStatusCode :: StatusCode -> String
 showStatusCode stc = unsafePerformIO $ c_status_to_string stc >>= peekCString
 
 -- Create aliases for pointers to opaque C structures
-newtype CDatabase   = CDatabase   (Ptr CDatabase   )
-newtype CQuery      = CQuery      (Ptr CQuery      )
-newtype CThreads    = CThreads    (Ptr CThreads    )
-newtype CThread     = CThread     (Ptr CThread     )
-newtype CMessages   = CMessages   (Ptr CMessages   )
-newtype CMessage    = CMessage    (Ptr CMessage    )
-newtype CTags       = CTags       (Ptr CTags       )
-newtype CDirectory  = CDirectory  (Ptr CDirectory  )
-newtype CFilenames  = CFilenames  (Ptr CFilenames  )
-newtype CConfigList = CConfigList (Ptr CConfigList )
-newtype CProperties = CProperties (Ptr CProperties )
+newtype CDatabase   = CDatabase   { unCDb         :: Ptr CDatabase   }
+newtype CQuery      = CQuery      { unCQuery      :: Ptr CQuery      }
+newtype CThreads    = CThreads    { unCThreads    :: Ptr CThreads    }
+newtype CThread     = CThread     { unCThread     :: Ptr CThread     }
+newtype CMessages   = CMessages   { unCMessages   :: Ptr CMessages   }
+newtype CMessage    = CMessage    { unCMessage    :: Ptr CMessage    }
+newtype CTags       = CTags       { unCTags       :: Ptr CTags       }
+newtype CDirectory  = CDirectory  { unCDirectory  :: Ptr CDirectory  }
+newtype CFilenames  = CFilenames  { unCFilenames  :: Ptr CFilenames  }
+newtype CConfigList = CConfigList { unCConfigList :: Ptr CConfigList }
+newtype CProperties = CProperties { unCProperties :: Ptr CProperties }
 
 -- notmuch_database_create* is not exposed~: this library aims to allow to manipulate
 -- the objects in the database, not the database itself
 
-newtype DatabaseMode = DatabaseMode { unDatabaseMode :: CInt }
+newtype CDatabaseMode = CDatabaseMode { unCDatabaseMode :: CInt }
                      deriving (Eq, Show)
 
-#{enum DatabaseMode, DatabaseMode
+#{enum CDatabaseMode, CDatabaseMode
  , dbmode_read_only  = NOTMUCH_DATABASE_MODE_READ_ONLY
  , dbmode_read_write = NOTMUCH_DATABASE_MODE_READ_WRITE
  }
 
 foreign import ccall "notmuch.h notmuch_database_open"
     c_database_open :: CString
-                    -> DatabaseMode
+                    -> CDatabaseMode
                     -> Ptr CDatabase
                     -> IO StatusCode
 
@@ -188,14 +188,23 @@ foreign import ccall "notmuch.h notmuch_query_search_threads_st"
                            -> Ptr CThreads
                            -> StatusCode
 
+foreign import ccall "notmuch.h &notmuch_threads_destroy"
+    c_threads_destructor :: FunPtr (Ptr CThreads -> IO ())
+
 foreign import ccall "notmuch.h notmuch_query_search_messages_st"
     c_query_search_messages :: CQuery
                             -> Ptr CMessages
                             -> StatusCode
 
+foreign import ccall "notmuch.h &notmuch_messages_destroy"
+    c_messages_destructor :: FunPtr (Ptr CMessages -> IO ())
+
 foreign import ccall "notmuch.h notmuch_query_destroy"
     c_query_destroy :: CQuery
                     -> IO ()
+
+foreign import ccall "notmuch.h &notmuch_query_destroy"
+    c_query_destructor :: FunPtr (Ptr CQuery -> IO ())
 
 foreign import ccall "notmuch.h notmuch_threads_valid"
     c_threads_valid :: CThreads
@@ -263,6 +272,9 @@ foreign import ccall "notmuch.h notmuch_thread_destroy"
     c_thread_destroy :: CThread
                      -> IO ()
 
+foreign import ccall "notmuch.h &notmuch_thread_destroy"
+    c_thread_destructor :: FunPtr (Ptr CThread -> IO ())
+
 foreign import ccall "notmuch.h notmuch_messages_valid"
     c_messages_valid :: CMessages
                      -> IO CInt
@@ -294,6 +306,13 @@ foreign import ccall "notmuch.h notmuch_messages_get_replies"
 foreign import ccall "notmuch.h notmuch_message_get_filenames"
     c_message_get_filenames :: CMessage
                             -> IO CFilenames
+
+foreign import ccall "notmuch.h notmuch_message_destroy"
+    c_message_destroy :: CMessage
+                      -> IO ()
+
+foreign import ccall "notmuch.h &notmuch_message_destroy"
+    c_message_destructor :: FunPtr (Ptr CMessage -> IO ())
 
 newtype MsgFlag = MsgFlag { unMsgFlag :: CInt }
                 deriving (Eq,Show)
@@ -394,6 +413,9 @@ foreign import ccall "notmuch.h notmuch_message_properties_value"
     c_message_properties_value :: CProperties
                                -> IO CString
 
+foreign import ccall "notmuch.h &notmuch_message_properties_destroy"
+    c_message_properties_destructor :: FunPtr (Ptr CProperties -> IO ())
+
 foreign import ccall "notmuch.h notmuch_tags_valid"
     c_tags_valid :: CTags
                  -> IO CInt
@@ -405,6 +427,9 @@ foreign import ccall "notmuch.h notmuch_tags_get"
 foreign import ccall "notmuch.h notmuch_tags_move_to_next"
     c_tags_move_to_next :: CTags
                         -> IO ()
+
+foreign import ccall "notmuch.h &notmuch_tags_destroy"
+    c_tags_destructor :: FunPtr (Ptr CTags -> IO ())
 
 foreign import ccall "notmuch.h notmuch_directory_set_mtime"
     c_directory_set_mtime :: CDirectory
@@ -428,6 +453,9 @@ foreign import ccall "notmuch.h notmuch_directory_get_child_directories"
 foreign import ccall "notmuch.h notmuch_directory_destroy"
     c_directory_destroy :: CDirectory
                         -> IO ()
+
+foreign import ccall "notmuch.h &notmuch_directory_destroy"
+    c_directory_destructor :: FunPtr (Ptr CDirectory -> IO ())
                         
 foreign import ccall "notmuch.h notmuch_filenames_valid"
     c_filenames_valid :: CFilenames
@@ -440,6 +468,9 @@ foreign import ccall "notmuch.h notmuch_filenames_get"
 foreign import ccall "notmuch.h notmuch_filenames_move_to_next"
     c_filenames_move_to_next :: CFilenames
                              -> IO ()
+
+foreign import ccall "notmuch.h &notmuch_filenames_destroy"
+    c_filenames_destructor :: FunPtr (Ptr CFilenames -> IO ())
 
 foreign import ccall "notmuch.h notmuch_database_set_config"
     c_database_set_config :: CDatabase
@@ -478,6 +509,9 @@ foreign import ccall "notmuch.h notmuch_config_list_move_to_next"
 foreign import ccall "notmuch.h notmuch_config_list_destroy"
     c_config_list_destroy :: CConfigList
                           -> IO ()
+
+foreign import ccall "notmuch.h &notmuch_config_list_destroy"
+    c_config_list_destructor :: FunPtr (Ptr CConfigList -> IO ())
 
 foreign import ccall "notmuch.h notmuch_built_with"
     c_built_with :: CString
