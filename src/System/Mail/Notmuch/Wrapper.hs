@@ -3,7 +3,7 @@
 module System.Mail.Notmuch.Wrapper
        ( ErrorCode(..), errorCodeMessage, statusToErrorCode
        , Database(..), getDatabasePath
-       , DatabaseMode(..), cdatabaseToDatabaseMode
+       , DatabaseMode(..), cdatabaseToDatabaseMode, databaseToCDatabaseMode
        , Query(..)      , makeGBQuery    , withCQuery
        , Threads(..)    , makeThreads    , withCThreads
        , Thread(..)     , makeThread     , withCThread
@@ -93,6 +93,10 @@ cdatabaseToDatabaseMode dbmode = lookupWithDefault dbmode DbReadOnly
     [ (dbmode_read_only  , DbReadOnly  )
     , (dbmode_read_write , DbReadWrite )
     ]
+
+databaseToCDatabaseMode :: DatabaseMode -> CDatabaseMode
+databaseToCDatabaseMode DbReadOnly  = dbmode_read_only
+databaseToCDatabaseMode DbReadWrite = dbmode_read_write
 
 type TagCreator s = Either CMessage CThread
 type NoDep      s = Ptr ()

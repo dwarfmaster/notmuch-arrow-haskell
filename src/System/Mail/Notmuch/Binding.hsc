@@ -38,6 +38,7 @@ showStatusCode :: StatusCode -> String
 showStatusCode stc = unsafePerformIO $ c_status_to_string stc >>= peekCString
 
 -- Create aliases for pointers to opaque C structures
+-- TODO make them instances of storable
 newtype CDatabase   = CDatabase   { unCDb         :: Ptr CDatabase   }
 newtype CQuery      = CQuery      { unCQuery      :: Ptr CQuery      }
 newtype CThreads    = CThreads    { unCThreads    :: Ptr CThreads    }
