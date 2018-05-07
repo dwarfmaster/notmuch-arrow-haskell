@@ -10,6 +10,7 @@ import Control.Exception
 import Control.Category
 import Control.Arrow
 import Control.Arrow.ArrowList
+import Control.Arrow.ArrowIO
 import Foreign
 import Foreign.C.String
 
@@ -202,4 +203,17 @@ instance ArrowList (NotmuchArrow s) where
           Just (h : t) -> return $ Right $ Just (h, Just t)
         ) Nothing
     
+instance ArrowIO (NotmuchArrow s) where
+    arrIO f = NmA (\_ x b -> if b then f x >>= \r -> return $ Right $ Just (r,False)
+                                  else return $ Right Nothing)
+                  True
+
+instance ArrowIOIf (NotmuchArrow s) where
+    isIOA predic = NmA (\_ x b -> if b
+                                    then do b' <- predic x
+                                            if b' then return $ Right $ Just (x,False)
+                                                  else return $ Right Nothing
+                                    else return $ Right Nothing
+                       )
+                       True
 
