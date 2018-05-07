@@ -12,6 +12,10 @@ import System.Mail.Notmuch.Binding
 import System.Mail.Notmuch.Wrapper
 import System.Mail.Notmuch.Arrow
 
+import Control.Arrow
+import Control.Arrow.ArrowList
+import Control.Arrow.ArrowIO
+
 newtype MsgId = MsgId { unMsgId :: String }
 
 class Equiv a b where
@@ -25,21 +29,22 @@ instance Equiv (Const a b) a where
     lEquiv = Const
 
 oneShotA :: (Equiv (a s) c, Equiv (b s) d)
-         => (Database -> a s -> IO (Either StatusCode (b s)))
+         => (Database -> a s -> IO (Either StatusCode (Maybe (b s))))
          -> NotmuchArrow s c d
 oneShotA f = NmA (\db x b -> if b
                              then do er <- f db $ lEquiv x
                                      return $ case er of
-                                       Left stcode -> Left $ statusToErrorCode stcode
-                                       Right r     -> Right $ Just (rEquiv r, False)
+                                       Left stcode    -> Left $ statusToErrorCode stcode
+                                       Right Nothing  -> Right Nothing
+                                       Right (Just r) -> Right $ Just (rEquiv r, False)
                              else return $ Right Nothing
                  )
                  True
 
 oneShotA' :: forall a b s. (Database -> a -> IO b) -> NotmuchArrow s a b
 oneShotA' f = oneShotA nf
- where nf :: Database -> Const a s -> IO (Either StatusCode (Const b s))
-       nf db x = f db (getConst x) >>= \r -> return $ Right $ Const r
+ where nf :: Database -> Const a s -> IO (Either StatusCode (Maybe (Const b s)))
+       nf db x = f db (getConst x) >>= \r -> return $ Right $ Just $ Const r
 
 actPtr :: Default b => (Ptr a -> IO b) -> Ptr a -> IO b
 actPtr f ptr = do
@@ -87,7 +92,8 @@ dbRevisionNm (Database cdb) _ =
 
 getDirectoryNmA :: NotmuchArrow s FilePath (Directory s)
 getDirectoryNmA = oneShotA getDirectoryNm
-getDirectoryNm :: Database -> (Const FilePath s) -> IO (Either StatusCode (Directory s))
+getDirectoryNm :: Database -> (Const FilePath s) -> IO (Either StatusCode
+                                                               (Maybe (Directory s)))
 getDirectoryNm (Database cdb) (Const path) =
     withCString path $ \cpath ->
     alloca $ \dir_ptr -> do
@@ -95,11 +101,12 @@ getDirectoryNm (Database cdb) (Const path) =
     if status /= success
     then return $ Left status
     else do dir <- peek dir_ptr >>= makeDirectory nullPtr
-            return $ Right dir
+            return $ Right $ Just dir
 
 addMessageNmA :: NotmuchArrow s FilePath (Message s)
 addMessageNmA = oneShotA addMessageNm
-addMessageNm :: Database -> (Const FilePath s) -> IO (Either StatusCode (Message s))
+addMessageNm :: Database -> (Const FilePath s) -> IO (Either StatusCode
+                                                             (Maybe (Message s)))
 addMessageNm (Database cdb) (Const path) =
     withCString path $ \cpath ->
     alloca $ \msg_ptr -> do
@@ -107,47 +114,53 @@ addMessageNm (Database cdb) (Const path) =
     if status /= success && status /= duplicate_message_id
     then return $ Left status
     else do msg <- peek msg_ptr >>= makeMessage Nothing
-            return $ Right msg
+            return $ Right $ Just msg
 
 rmMessageNmA :: NotmuchArrow s FilePath ()
 rmMessageNmA = oneShotA rmMessageNm
-rmMessageNm :: Database -> Const FilePath s -> IO (Either StatusCode (Const () s))
+rmMessageNm :: Database -> Const FilePath s -> IO (Either StatusCode (Maybe (Const () s)))
 rmMessageNm (Database cdb) (Const path) =
     withCString path $ \cpath -> do
     status <- c_database_remove_message cdb cpath
     if status /= success
     then return $ Left status
-    else return $ Right $ Const ()
+    else return $ Right $ Just $ Const ()
 
 findMessageNmA :: NotmuchArrow s MsgId (Message s)
 findMessageNmA = oneShotA findMessageNm
-findMessageNm :: Database -> Const MsgId s -> IO (Either StatusCode (Message s))
+findMessageNm :: Database -> Const MsgId s -> IO (Either StatusCode (Maybe (Message s)))
 findMessageNm (Database cdb) (Const (MsgId mid)) =
     withCString mid $ \cmid ->
     alloca $ \msg_ptr -> do
     status <- c_database_find_message cdb cmid msg_ptr
     if status /= success
     then return $ Left status
-    else do msg <- peek msg_ptr >>= makeMessage Nothing
-            return $ Right msg
+    else do cmsg <- peek msg_ptr
+            if unCMessage cmsg == nullPtr
+            then return $ Right Nothing
+            else do msg <- makeMessage Nothing cmsg
+                    return $ Right $ Just msg
 
 findMessageByFilenameNmA :: NotmuchArrow s FilePath (Message s)
 findMessageByFilenameNmA = oneShotA findMessageByFilenameNm
 findMessageByFilenameNm :: Database -> Const FilePath s
-                        -> IO (Either StatusCode (Message s))
+                        -> IO (Either StatusCode (Maybe (Message s)))
 findMessageByFilenameNm (Database cdb) (Const path) =
     withCString path $ \cpath ->
     alloca $ \msg_ptr -> do
     status <- c_database_find_message_by_filename cdb cpath msg_ptr
     if status /= success
     then return $ Left status
-    else do msg <- peek msg_ptr >>= makeMessage Nothing
-            return $ Right msg
+    else do cmsg <- peek msg_ptr
+            if unCMessage cmsg == nullPtr
+            then return $ Right Nothing
+            else do msg <- makeMessage Nothing cmsg
+                    return $ Right $ Just msg
 
--- TODO fix Segfault !
 msgHeaderNmA :: String -> NotmuchArrow s (Message s) String
 msgHeaderNmA hd = oneShotA $ msgHeaderNm hd
-msgHeaderNm :: String -> Database -> Message s -> IO (Either StatusCode (Const String s))
+msgHeaderNm :: String -> Database -> Message s -> IO (Either StatusCode
+                                                             (Maybe (Const String s)))
 msgHeaderNm hd _ msg =
     withCString hd $ \chd ->
     withCMessage msg $ \cmsg -> do
@@ -155,5 +168,5 @@ msgHeaderNm hd _ msg =
     if chdval == nullPtr
     then return $ Left null_pointer
     else do hdval  <- peekCString chdval
-            return $ Right $ Const hdval
+            return $ Right $ Just $ Const hdval
 
