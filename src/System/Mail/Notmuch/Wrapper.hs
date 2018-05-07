@@ -98,6 +98,7 @@ databaseToCDatabaseMode DbReadOnly  = dbmode_read_only
 databaseToCDatabaseMode DbReadWrite = dbmode_read_write
 
 type TagCreator s = Either CMessage CThread
+type MsgCreator s = Maybe CMessages
 type NoDep      s = Ptr ()
 type FNCreator  s = Either CMessage CDirectory
 
@@ -105,7 +106,7 @@ $(makeManualOrGB "Query" "c_query_destructor")
 $(makeGBDepData "Threads"    "Query"       "c_threads_destructor"            )
 $(makeGBDepData "Thread"     "Threads"     "c_thread_destructor"             )
 $(makeGBDepData "Messages"   "Query"       "c_messages_destructor"           )
-$(makeGBDepData "Message"    "Messages"    "c_message_destructor"            )
+$(makeGBDepData "Message"    "MsgCreator"  "c_message_destructor"            )
 $(makeGBDepData "Tags"       "TagCreator"  "c_tags_destructor"               )
 $(makeGBDepData "Directory"  "NoDep"       "c_directory_destructor"          )
 $(makeGBDepData "Filenames"  "FNCreator"   "c_filenames_destructor"          )
