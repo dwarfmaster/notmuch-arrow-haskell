@@ -1,7 +1,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 
 module System.Mail.Notmuch.Wrapper.Template
-       ( makeManualOrGB, makeGBDepData
+       ( makeManualOrGB, makeGBDepData, deriveStorable
        ) where
 
 import Language.Haskell.TH
@@ -130,3 +130,26 @@ makeGBDepData name dep destr = fmap mconcat $ sequence
                              , makeGBDep     name dep destr
                              , makeWithGBDep name
                              ]
+
+deriveStorable :: String -> Q [Dec]
+deriveStorable name = do
+    sizeOfExp    <- [| sizeOf     . $(extractor)         |]
+    alignmentExp <- [| alignment . $(extractor)          |]
+    peekExp      <- [| $(constructor) <$> ((return $ castPtr ptr) >>= peek) |]
+    pokeExp      <- [| poke (castPtr ptr) . $(extractor) |]
+    return [ InstanceD Nothing [] (AppT (ConT $ mkName "Storable") (ConT $ mkName name))
+                       [ FunD (mkName "sizeOf")
+                              [ Clause [] (NormalB sizeOfExp) [] ]
+                       , FunD (mkName "alignment")
+                              [ Clause [] (NormalB alignmentExp) [] ]
+                       , FunD (mkName "peek")
+                              [ Clause [ VarP $ mkName "ptr" ] (NormalB peekExp) [] ]
+                       , FunD (mkName "poke")
+                              [ Clause [ VarP $ mkName "ptr" ] (NormalB pokeExp) [] ]
+                       ]
+           ]
+ where extractor :: Q Exp
+       extractor = return $ VarE $ mkName $ "un" <> name
+       constructor :: Q Exp
+       constructor = return $ ConE $ mkName name
+

@@ -56,8 +56,8 @@ runNotmuchArrow dbpath dbmode arrow x =
     alloca $ \db_ptr -> do
     statusCode <- c_database_open dbpath_str
                                   (databaseToCDatabaseMode dbmode)
-                                  (castPtr db_ptr)
-    cdata <- CDatabase <$> peek db_ptr
+                                  db_ptr
+    cdata <- peek db_ptr
     if statusCode /= success then throw $ NmE $ statusToErrorCode statusCode
                              else return ()
     result <- ( runWithDatabase (Database cdata) arrow x

@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP, ForeignFunctionInterface #-}
+{-# LANGUAGE TemplateHaskell               #-}
 
 module System.Mail.Notmuch.Binding where
 
@@ -6,6 +7,7 @@ import Foreign
 import Foreign.C.Types
 import Foreign.C.String
 import System.IO.Unsafe
+import System.Mail.Notmuch.Wrapper.Template
 
 #include <notmuch.h>
 
@@ -39,7 +41,7 @@ showStatusCode stc = unsafePerformIO $ c_status_to_string stc >>= peekCString
 
 -- Create aliases for pointers to opaque C structures
 -- TODO make them instances of storable
-newtype CDatabase   = CDatabase   { unCDb         :: Ptr CDatabase   }
+newtype CDatabase   = CDatabase   { unCDatabase   :: Ptr CDatabase   }
 newtype CQuery      = CQuery      { unCQuery      :: Ptr CQuery      }
 newtype CThreads    = CThreads    { unCThreads    :: Ptr CThreads    }
 newtype CThread     = CThread     { unCThread     :: Ptr CThread     }
@@ -50,6 +52,17 @@ newtype CDirectory  = CDirectory  { unCDirectory  :: Ptr CDirectory  }
 newtype CFilenames  = CFilenames  { unCFilenames  :: Ptr CFilenames  }
 newtype CConfigList = CConfigList { unCConfigList :: Ptr CConfigList }
 newtype CProperties = CProperties { unCProperties :: Ptr CProperties }
+$(deriveStorable "CDatabase"   )
+$(deriveStorable "CQuery"      )
+$(deriveStorable "CThreads"    )
+$(deriveStorable "CThread"     )
+$(deriveStorable "CMessages"   )
+$(deriveStorable "CMessage"    )
+$(deriveStorable "CTags"       )
+$(deriveStorable "CDirectory"  )
+$(deriveStorable "CFilenames"  )
+$(deriveStorable "CConfigList" )
+$(deriveStorable "CProperties" )
 
 -- notmuch_database_create* is not exposed~: this library aims to allow to manipulate
 -- the objects in the database, not the database itself
