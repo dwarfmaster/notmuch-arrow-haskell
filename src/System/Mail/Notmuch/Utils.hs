@@ -22,43 +22,37 @@ actPtr f ptr = do
 dbStatusNmA :: NotmuchArrow s a String
 dbStatusNmA = oneShotA dbStatusNm
 dbStatusNm :: Database -> a -> IO String
-dbStatusNm (OpenDatabase cdb) _ = c_database_string cdb >>= actPtr peekCString
-dbStatusNm ClosedDatabase     _ = return "Closed database"
+dbStatusNm (Database cdb) _ = c_database_string cdb >>= actPtr peekCString
 
 dbPathNmA :: NotmuchArrow s a FilePath
 dbPathNmA = oneShotA dbPathNm
 dbPathNm :: Database -> a -> IO FilePath
-dbPathNm (OpenDatabase cdb) _ = c_database_get_path cdb >>= actPtr peekCString
-dbPathNm ClosedDatabase     _ = return ""
+dbPathNm (Database cdb) _ = c_database_get_path cdb >>= actPtr peekCString
 
 dbVersionNmA :: NotmuchArrow s a Integer
 dbVersionNmA = oneShotA dbVersionNm
 dbVersionNm :: Database -> a -> IO Integer
-dbVersionNm ClosedDatabase     _ = return 0
-dbVersionNm (OpenDatabase cdb) _ = toInteger <$> c_database_get_version cdb
+dbVersionNm (Database cdb) _ = toInteger <$> c_database_get_version cdb
 
 makeAtomicNmA :: NotmuchArrow s a b -> NotmuchArrow s a b
 makeAtomicNmA (NmA f init_acc) =
-    NmA (\db x acc ->
-        case db of
-            ClosedDatabase   -> return $ Left NullPointer
-            OpenDatabase cdb -> do
-                stcode <- c_database_begin_atomic cdb
-                if stcode /= success
-                then return $ Left $ statusToErrorCode stcode
-                else do r <- f db x acc
-                        stcode' <- c_database_end_atomic cdb
-                        if stcode' /= success
-                        then return $ Left $ statusToErrorCode stcode'
-                        else return r
+    NmA (\db x acc -> do
+             let cdb = cData db
+             stcode <- c_database_begin_atomic cdb
+             if stcode /= success
+             then return $ Left $ statusToErrorCode stcode
+             else do r <- f db x acc
+                     stcode' <- c_database_end_atomic cdb
+                     if stcode' /= success
+                     then return $ Left $ statusToErrorCode stcode'
+                     else return r
         )
         init_acc
 
 dbRevisionNmA :: NotmuchArrow s a (String,Integer)
 dbRevisionNmA = oneShotA dbRevisionNm
 dbRevisionNm :: Database -> a -> IO (String,Integer)
-dbRevisionNm ClosedDatabase     _ = return ("", 0)
-dbRevisionNm (OpenDatabase cdb) _ =
+dbRevisionNm (Database cdb) _ =
     alloca $ \str_ptr -> do
     rev <- c_database_get_revision cdb str_ptr
     str <- peek str_ptr >>= actPtr peekCString

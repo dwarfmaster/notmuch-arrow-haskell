@@ -74,16 +74,15 @@ errorCodeMessage errcode = lookupWithDefault errcode "Unknown error" errMessages
  where errMessages :: [(ErrorCode,String)]
        errMessages = map (\(a,b) -> (b, showStatusCode a)) statusErrorCorrespondance
 
-data Database = OpenDatabase !CDatabase | ClosedDatabase
+-- Always assumes cData is a valid ptr
+data Database = Database { cData :: !CDatabase }
 
 getDatabasePath :: Database -> FilePath
-getDatabasePath ClosedDatabase       = ""
-getDatabasePath (OpenDatabase cdata) = unsafePerformIO
-                                     $ c_database_get_path cdata >>= peekCString
+getDatabasePath (Database cdata) = unsafePerformIO
+                                 $ c_database_get_path cdata >>= peekCString
 
 instance Show Database where
-    show ClosedDatabase      = "ClosedDatabase"
-    show dt@(OpenDatabase _) = "OpenDatabase <" <> getDatabasePath dt <> ">"
+    show dt = "OpenDatabase <" <> getDatabasePath dt <> ">"
 
 data DatabaseMode = DbReadOnly
                   | DbReadWrite

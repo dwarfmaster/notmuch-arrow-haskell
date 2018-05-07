@@ -60,7 +60,7 @@ runNotmuchArrow dbpath dbmode arrow x =
     cdata <- CDatabase <$> peek db_ptr
     if statusCode /= success then throw $ NmE $ statusToErrorCode statusCode
                              else return ()
-    result <- ( runWithDatabase (OpenDatabase cdata) arrow x
+    result <- ( runWithDatabase (Database cdata) arrow x
                    `catch`
                 \e -> c_database_destroy cdata >> throw (e :: SomeException)
               )
