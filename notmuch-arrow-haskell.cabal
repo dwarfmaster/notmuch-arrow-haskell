@@ -16,11 +16,13 @@ library
   other-modules:       System.Mail.Notmuch.Binding
                      , System.Mail.Notmuch.Wrapper
                      , System.Mail.Notmuch.Arrow
+                     , System.Mail.Notmuch.Utils
   extra-libraries:     notmuch
   hs-source-dirs:      src/
   build-depends:       base >= 4.9 && < 4.10
                      , array, containers, transformers, directory
                      , mtl, bytestring, template-haskell, hxt
+                     , data-default
   build-tools:         hsc2hs
   ghc-options:         -Wall
   default-language:    Haskell2010
