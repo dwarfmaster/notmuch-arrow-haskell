@@ -300,7 +300,7 @@ foreign import ccall "notmuch.h notmuch_message_get_thread_id"
     c_message_get_thread_id :: CMessage
                             -> IO CString
 
-foreign import ccall "notmuch.h notmuch_messages_get_replies"
+foreign import ccall "notmuch.h notmuch_message_get_replies"
     c_message_get_replies :: CMessage
                           -> IO CMessages
 
@@ -485,7 +485,7 @@ foreign import ccall "notmuch.h notmuch_database_get_config"
                           -> Ptr CString
                           -> IO StatusCode
 
-foreign import ccall "notmuch.h notmuch_database_get_config_mist"
+foreign import ccall "notmuch.h notmuch_database_get_config_list"
     c_database_get_config_list :: CDatabase
                                -> CString
                                -> Ptr CConfigList
