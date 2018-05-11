@@ -75,7 +75,14 @@ errorCodeMessage errcode = lookupWithDefault errcode "Unknown error" errMessages
        errMessages = map (\(a,b) -> (b, showStatusCode a)) statusErrorCorrespondance
 
 type NoDep = Ptr ()
-$(makeGBDepData "Database" "NoDep" "c_database_destructor")
+data Database s = Database CDatabase
+makeDatabase :: Ptr () -> CDatabase -> IO (Database s)
+makeDatabase = const $ return . Database
+withCDatabase :: Database s -> (CDatabase -> IO a) -> IO a
+withCDatabase (Database cdb) f = f cdb
+-- TODO make database a foreign ptr with a working destructor
+-- As of now the following segfaults
+-- $(makeGBDepData "Database" "NoDep" "c_database_destructor")
 
 getDatabasePath :: Database s -> FilePath
 getDatabasePath dt = unsafePerformIO
