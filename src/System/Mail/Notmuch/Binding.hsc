@@ -96,6 +96,9 @@ foreign import ccall "notmuch.h notmuch_database_destroy"
     c_database_destroy :: CDatabase
                        -> IO StatusCode
 
+foreign import ccall "notmuch.h &notmuch_database_destroy"
+    c_database_destructor :: FunPtr (Ptr CDatabase -> IO ())
+
 foreign import ccall "notmuch.h notmuch_database_get_path"
     c_database_get_path :: CDatabase
                         -> IO CString

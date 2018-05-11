@@ -18,7 +18,7 @@ import System.Mail.Notmuch.Binding
 import System.Mail.Notmuch.Wrapper
 
 data NotmuchArrow s a b where
-    NmA :: (Database -> a -> c -> IO (Either ErrorCode (Maybe (b,c))))
+    NmA :: (Database s -> a -> c -> IO (Either ErrorCode (Maybe (b,c))))
         -> c
         -> NotmuchArrow s a b
 
@@ -38,7 +38,7 @@ runArrowWith acc arrow = arrow acc >>= \ret ->
                                 return $ etl >>= Right . (b:)
 
 -- If an error was encontered, it will be thrown as a NotmuchException
-runWithDatabase :: Database -> (forall s. NotmuchArrow s a b) -> a -> IO [b]
+runWithDatabase :: Database s -> NotmuchArrow s a b -> a -> IO [b]
 runWithDatabase db (NmA f acc) x = do
   result <- runArrowWith acc (f db x)
   case result of
@@ -60,11 +60,11 @@ runNotmuchArrow dbpath dbmode arrow x =
     cdata <- peek db_ptr
     if statusCode /= success then throw $ NmE $ statusToErrorCode statusCode
                              else return ()
-    result <- ( runWithDatabase (Database cdata) arrow x
+    dt <- makeDatabase nullPtr cdata
+    result <- ( runWithDatabase dt arrow x
                    `catch`
-                \e -> c_database_destroy cdata >> throw (e :: SomeException)
+                \e -> throw (e :: SomeException)
               )
-    _ <- c_database_destroy cdata
     return result
 
 data CompAcc y c1 c2 = FirstRun  c1 c2

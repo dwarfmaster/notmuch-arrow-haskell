@@ -29,7 +29,7 @@ instance Equiv (Const a b) a where
     lEquiv = Const
 
 oneShotA :: (Equiv (a s) c, Equiv (b s) d)
-         => (Database -> a s -> IO (Either StatusCode (Maybe (b s))))
+         => (Database s -> a s -> IO (Either StatusCode (Maybe (b s))))
          -> NotmuchArrow s c d
 oneShotA f = NmA (\db x b -> if b
                              then do er <- f db $ lEquiv x
@@ -41,9 +41,9 @@ oneShotA f = NmA (\db x b -> if b
                  )
                  True
 
-oneShotA' :: forall a b s. (Database -> a -> IO b) -> NotmuchArrow s a b
+oneShotA' :: forall a b s. (Database s -> a -> IO b) -> NotmuchArrow s a b
 oneShotA' f = oneShotA nf
- where nf :: Database -> Const a s -> IO (Either StatusCode (Maybe (Const b s)))
+ where nf :: Database s -> Const a s -> IO (Either StatusCode (Maybe (Const b s)))
        nf db x = f db (getConst x) >>= \r -> return $ Right $ Just $ Const r
 
 actPtr :: Default b => (Ptr a -> IO b) -> Ptr a -> IO b
@@ -53,23 +53,25 @@ actPtr f ptr = do
 
 dbStatusNmA :: NotmuchArrow s a String
 dbStatusNmA = oneShotA' dbStatusNm
-dbStatusNm :: Database -> a -> IO String
-dbStatusNm (Database cdb) _ = c_database_string cdb >>= actPtr peekCString
+dbStatusNm :: Database s -> a -> IO String
+dbStatusNm dt _ = withCDatabase dt $ \cdb ->
+                  c_database_string cdb >>= actPtr peekCString
 
 dbPathNmA :: NotmuchArrow s a FilePath
 dbPathNmA = oneShotA' dbPathNm
-dbPathNm :: Database -> a -> IO FilePath
-dbPathNm (Database cdb) _ = c_database_get_path cdb >>= actPtr peekCString
+dbPathNm :: Database s -> a -> IO FilePath
+dbPathNm dt _ = withCDatabase dt $ \cdb ->
+                c_database_get_path cdb >>= actPtr peekCString
 
 dbVersionNmA :: NotmuchArrow s a Integer
 dbVersionNmA = oneShotA' dbVersionNm
-dbVersionNm :: Database -> a -> IO Integer
-dbVersionNm (Database cdb) _ = toInteger <$> c_database_get_version cdb
+dbVersionNm :: Database s -> a -> IO Integer
+dbVersionNm dt _ = withCDatabase dt $ \cdb ->
+                   toInteger <$> c_database_get_version cdb
 
 makeAtomicNmA :: NotmuchArrow s a b -> NotmuchArrow s a b
 makeAtomicNmA (NmA f init_acc) =
-    NmA (\db x acc -> do
-             let cdb = cData db
+    NmA (\db x acc -> withCDatabase db $ \cdb -> do
              stcode <- c_database_begin_atomic cdb
              if stcode /= success
              then return $ Left $ statusToErrorCode stcode
@@ -83,8 +85,9 @@ makeAtomicNmA (NmA f init_acc) =
 
 dbRevisionNmA :: NotmuchArrow s a (String,Integer)
 dbRevisionNmA = oneShotA' dbRevisionNm
-dbRevisionNm :: Database -> a -> IO (String,Integer)
-dbRevisionNm (Database cdb) _ =
+dbRevisionNm :: Database s -> a -> IO (String,Integer)
+dbRevisionNm dt _ =
+    withCDatabase dt $ \cdb ->
     alloca $ \str_ptr -> do
     rev <- c_database_get_revision cdb str_ptr
     str <- peek str_ptr >>= actPtr peekCString
@@ -92,34 +95,38 @@ dbRevisionNm (Database cdb) _ =
 
 getDirectoryNmA :: NotmuchArrow s FilePath (Directory s)
 getDirectoryNmA = oneShotA getDirectoryNm
-getDirectoryNm :: Database -> (Const FilePath s) -> IO (Either StatusCode
-                                                               (Maybe (Directory s)))
-getDirectoryNm (Database cdb) (Const path) =
+getDirectoryNm :: Database s -> (Const FilePath s) -> IO (Either StatusCode
+                                                                 (Maybe (Directory s)))
+getDirectoryNm dt (Const path) =
+    withCDatabase dt $ \cdb ->
     withCString path $ \cpath ->
     alloca $ \dir_ptr -> do
     status <- c_database_get_directory cdb cpath dir_ptr
     if status /= success
     then return $ Left status
-    else do dir <- peek dir_ptr >>= makeDirectory nullPtr
+    else do dir <- peek dir_ptr >>= makeDirectory cdb
             return $ Right $ Just dir
 
 addMessageNmA :: NotmuchArrow s FilePath (Message s)
 addMessageNmA = oneShotA addMessageNm
-addMessageNm :: Database -> (Const FilePath s) -> IO (Either StatusCode
-                                                             (Maybe (Message s)))
-addMessageNm (Database cdb) (Const path) =
+addMessageNm :: Database s -> (Const FilePath s) -> IO (Either StatusCode
+                                                               (Maybe (Message s)))
+addMessageNm dt (Const path) =
+    withCDatabase dt $ \cdb ->
     withCString path $ \cpath ->
     alloca $ \msg_ptr -> do
     status <- c_database_add_message cdb cpath msg_ptr
     if status /= success && status /= duplicate_message_id
     then return $ Left status
-    else do msg <- peek msg_ptr >>= makeMessage Nothing
+    else do msg <- peek msg_ptr >>= makeMessage (Right cdb)
             return $ Right $ Just msg
 
 rmMessageNmA :: NotmuchArrow s FilePath ()
 rmMessageNmA = oneShotA rmMessageNm
-rmMessageNm :: Database -> Const FilePath s -> IO (Either StatusCode (Maybe (Const () s)))
-rmMessageNm (Database cdb) (Const path) =
+rmMessageNm :: Database s -> Const FilePath s -> IO (Either StatusCode
+                                                            (Maybe (Const () s)))
+rmMessageNm dt (Const path) =
+    withCDatabase dt $ \cdb ->
     withCString path $ \cpath -> do
     status <- c_database_remove_message cdb cpath
     if status /= success
@@ -128,8 +135,9 @@ rmMessageNm (Database cdb) (Const path) =
 
 findMessageNmA :: NotmuchArrow s MsgId (Message s)
 findMessageNmA = oneShotA findMessageNm
-findMessageNm :: Database -> Const MsgId s -> IO (Either StatusCode (Maybe (Message s)))
-findMessageNm (Database cdb) (Const (MsgId mid)) =
+findMessageNm :: Database s -> Const MsgId s -> IO (Either StatusCode (Maybe (Message s)))
+findMessageNm dt (Const (MsgId mid)) =
+    withCDatabase dt $ \cdb ->
     withCString mid $ \cmid ->
     alloca $ \msg_ptr -> do
     status <- c_database_find_message cdb cmid msg_ptr
@@ -138,14 +146,15 @@ findMessageNm (Database cdb) (Const (MsgId mid)) =
     else do cmsg <- peek msg_ptr
             if unCMessage cmsg == nullPtr
             then return $ Right Nothing
-            else do msg <- makeMessage Nothing cmsg
+            else do msg <- makeMessage (Right cdb) cmsg
                     return $ Right $ Just msg
 
 findMessageByFilenameNmA :: NotmuchArrow s FilePath (Message s)
 findMessageByFilenameNmA = oneShotA findMessageByFilenameNm
-findMessageByFilenameNm :: Database -> Const FilePath s
+findMessageByFilenameNm :: Database s -> Const FilePath s
                         -> IO (Either StatusCode (Maybe (Message s)))
-findMessageByFilenameNm (Database cdb) (Const path) =
+findMessageByFilenameNm dt (Const path) =
+    withCDatabase dt $ \cdb ->
     withCString path $ \cpath ->
     alloca $ \msg_ptr -> do
     status <- c_database_find_message_by_filename cdb cpath msg_ptr
@@ -154,13 +163,13 @@ findMessageByFilenameNm (Database cdb) (Const path) =
     else do cmsg <- peek msg_ptr
             if unCMessage cmsg == nullPtr
             then return $ Right Nothing
-            else do msg <- makeMessage Nothing cmsg
+            else do msg <- makeMessage (Right cdb) cmsg
                     return $ Right $ Just msg
 
 msgHeaderNmA :: String -> NotmuchArrow s (Message s) String
 msgHeaderNmA hd = oneShotA $ msgHeaderNm hd
-msgHeaderNm :: String -> Database -> Message s -> IO (Either StatusCode
-                                                             (Maybe (Const String s)))
+msgHeaderNm :: String -> Database s -> Message s -> IO (Either StatusCode
+                                                               (Maybe (Const String s)))
 msgHeaderNm hd _ msg =
     withCString hd $ \chd ->
     withCMessage msg $ \cmsg -> do

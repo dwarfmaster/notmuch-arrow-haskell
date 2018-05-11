@@ -2,7 +2,7 @@
 
 module System.Mail.Notmuch.Wrapper
        ( ErrorCode(..), errorCodeMessage, statusToErrorCode
-       , Database(..), getDatabasePath
+       , Database(..), getDatabasePath, makeDatabase, withCDatabase
        , DatabaseMode(..), cdatabaseToDatabaseMode, databaseToCDatabaseMode
        , Query(..)      , makeGBQuery    , withCQuery
        , Threads(..)    , makeThreads    , withCThreads
@@ -74,14 +74,15 @@ errorCodeMessage errcode = lookupWithDefault errcode "Unknown error" errMessages
  where errMessages :: [(ErrorCode,String)]
        errMessages = map (\(a,b) -> (b, showStatusCode a)) statusErrorCorrespondance
 
--- Always assumes cData is a valid ptr
-data Database = Database { cData :: !CDatabase }
+type NoDep = Ptr ()
+$(makeGBDepData "Database" "NoDep" "c_database_destructor")
 
-getDatabasePath :: Database -> FilePath
-getDatabasePath (Database cdata) = unsafePerformIO
-                                 $ c_database_get_path cdata >>= peekCString
+getDatabasePath :: Database s -> FilePath
+getDatabasePath dt = unsafePerformIO
+                   $ withCDatabase dt $ \cdb ->
+                     c_database_get_path cdb >>= peekCString
 
-instance Show Database where
+instance Show (Database s) where
     show dt = "OpenDatabase <" <> getDatabasePath dt <> ">"
 
 data DatabaseMode = DbReadOnly
@@ -97,19 +98,18 @@ databaseToCDatabaseMode :: DatabaseMode -> CDatabaseMode
 databaseToCDatabaseMode DbReadOnly  = dbmode_read_only
 databaseToCDatabaseMode DbReadWrite = dbmode_read_write
 
-type TagCreator s = Either CMessage CThread
-type MsgCreator s = Maybe CMessages
-type NoDep      s = Ptr ()
-type FNCreator  s = Either CMessage CDirectory
+type TagCreator = Either CMessage (Either CThread CDatabase)
+type MsgCreator = Either CMessages CDatabase
+type FNCreator  = Either CMessage CDirectory
 
 $(makeManualOrGB "Query" "c_query_destructor")
-$(makeGBDepData "Threads"    "Query"       "c_threads_destructor"            )
-$(makeGBDepData "Thread"     "Threads"     "c_thread_destructor"             )
-$(makeGBDepData "Messages"   "Query"       "c_messages_destructor"           )
+$(makeGBDepData "Threads"    "CQuery"       "c_threads_destructor"            )
+$(makeGBDepData "Thread"     "CThreads"     "c_thread_destructor"             )
+$(makeGBDepData "Messages"   "CQuery"       "c_messages_destructor"           )
 $(makeGBDepData "Message"    "MsgCreator"  "c_message_destructor"            )
 $(makeGBDepData "Tags"       "TagCreator"  "c_tags_destructor"               )
-$(makeGBDepData "Directory"  "NoDep"       "c_directory_destructor"          )
+$(makeGBDepData "Directory"  "CDatabase"    "c_directory_destructor"          )
 $(makeGBDepData "Filenames"  "FNCreator"   "c_filenames_destructor"          )
-$(makeGBDepData "ConfigList" "NoDep"       "c_config_list_destructor"        )
-$(makeGBDepData "Properties" "Message"     "c_message_properties_destructor" )
+$(makeGBDepData "ConfigList" "CDatabase"    "c_config_list_destructor"        )
+$(makeGBDepData "Properties" "CMessage"     "c_message_properties_destructor" )
 
