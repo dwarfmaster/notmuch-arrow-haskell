@@ -1,19 +1,22 @@
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE GADTs           #-}
 
 module System.Mail.Notmuch.Wrapper
        ( ErrorCode(..), errorCodeMessage, statusToErrorCode
        , Database(..), getDatabasePath, makeDatabase, withCDatabase
        , DatabaseMode(..), cdatabaseToDatabaseMode, databaseToCDatabaseMode
-       , Query(..)      , makeGBQuery    , withCQuery
-       , Threads(..)    , makeThreads    , withCThreads
-       , Thread(..)     , makeThread     , withCThread
-       , Messages(..)   , makeMessages   , withCMessages
-       , Message(..)    , makeMessage    , withCMessage
-       , Tags(..)       , makeTags       , withCTags
-       , Directory(..)  , makeDirectory  , withCDirectory
-       , Filenames(..)  , makeFilenames  , withCFilenames
-       , ConfigList(..) , makeConfigList , withCConfigList
-       , Properties(..) , makeProperties , withCProperties
+       , QueryExclude(..), queryExcludeToExcludeFlag, excludeFlagToQuery
+       , QuerySort(..), querySortToSortOrder, sortOrderToQuerySort
+       , Query      , makeQuery      , withCQuery
+       , Threads    , makeThreads    , withCThreads
+       , Thread     , makeThread     , withCThread
+       , Messages   , makeMessages   , withCMessages
+       , Message    , makeMessage    , withCMessage
+       , Tags       , makeTags       , withCTags
+       , Directory  , makeDirectory  , withCDirectory
+       , Filenames  , makeFilenames  , withCFilenames
+       , ConfigList , makeConfigList , withCConfigList
+       , Properties , makeProperties , withCProperties
        )
        where
 
@@ -105,18 +108,57 @@ databaseToCDatabaseMode :: DatabaseMode -> CDatabaseMode
 databaseToCDatabaseMode DbReadOnly  = dbmode_read_only
 databaseToCDatabaseMode DbReadWrite = dbmode_read_write
 
-type TagCreator = Either CMessage (Either CThread CDatabase)
-type MsgCreator = Either CMessages CDatabase
-type FNCreator  = Either CMessage CDirectory
+data QueryExclude = QueryExcludeFlag
+                  | QueryExcludeTrue
+                  | QueryExcludeFalse
+                  | QueryExcludeAll
+                  deriving (Eq,Show,Enum)
 
-$(makeManualOrGB "Query" "c_query_destructor")
-$(makeGBDepData "Threads"    "CQuery"       "c_threads_destructor"            )
-$(makeGBDepData "Thread"     "CThreads"     "c_thread_destructor"             )
-$(makeGBDepData "Messages"   "CQuery"       "c_messages_destructor"           )
+queryExcludeToExcludeFlag :: QueryExclude -> Exclude
+queryExcludeToExcludeFlag QueryExcludeFlag  = exclude_flag
+queryExcludeToExcludeFlag QueryExcludeTrue  = exclude_true
+queryExcludeToExcludeFlag QueryExcludeFalse = exclude_false
+queryExcludeToExcludeFlag QueryExcludeAll   = exclude_all
+
+excludeFlagToQuery :: Exclude -> QueryExclude
+excludeFlagToQuery excl = lookupWithDefault excl QueryExcludeFlag
+    [ (exclude_flag  , QueryExcludeFlag  )
+    , (exclude_true  , QueryExcludeTrue  )
+    , (exclude_false , QueryExcludeFalse )
+    , (exclude_all   , QueryExcludeAll   )
+    ]
+
+data QuerySort = SortOldestFirst
+               | SortNewestFirst
+               | SortMessageId
+               | SortUnsorted
+               deriving (Eq,Show,Enum)
+
+querySortToSortOrder :: QuerySort -> SortOrder
+querySortToSortOrder SortOldestFirst = sort_oldest_first
+querySortToSortOrder SortNewestFirst = sort_newest_first
+querySortToSortOrder SortMessageId   = sort_message_id
+querySortToSortOrder SortUnsorted    = sort_unsorted
+
+sortOrderToQuerySort :: SortOrder -> QuerySort
+sortOrderToQuerySort sorto = lookupWithDefault sorto SortUnsorted
+    [ (sort_oldest_first , SortOldestFirst )
+    , (sort_newest_first , SortNewestFirst )
+    , (sort_message_id   , SortMessageId   )
+    , (sort_unsorted     , SortUnsorted    )
+    ]
+
+$(makeGBDepData "Query"      "Database"    "c_query_destructor"              )
+$(makeGBDepData "Threads"    "Query"       "c_threads_destructor"            )
+$(makeGBDepData "Thread"     "Threads"     "c_thread_destructor"             )
+$(makeGBDepData "Messages"   "Query"       "c_messages_destructor"           )
+type MsgCreator s = Either (Messages s) (Database s)
 $(makeGBDepData "Message"    "MsgCreator"  "c_message_destructor"            )
+type TagCreator s = Either (Message s) (Either (Thread s) (Database s))
+$(makeGBDepData "Directory"  "Database"    "c_directory_destructor"          )
+type FNCreator  s = Either (Message s) (Directory s)
 $(makeGBDepData "Tags"       "TagCreator"  "c_tags_destructor"               )
-$(makeGBDepData "Directory"  "CDatabase"    "c_directory_destructor"          )
 $(makeGBDepData "Filenames"  "FNCreator"   "c_filenames_destructor"          )
-$(makeGBDepData "ConfigList" "CDatabase"    "c_config_list_destructor"        )
-$(makeGBDepData "Properties" "CMessage"     "c_message_properties_destructor" )
+$(makeGBDepData "ConfigList" "Database"    "c_config_list_destructor"        )
+$(makeGBDepData "Properties" "Message"     "c_message_properties_destructor" )
 

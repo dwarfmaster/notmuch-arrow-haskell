@@ -12,10 +12,6 @@ import System.Mail.Notmuch.Binding
 import System.Mail.Notmuch.Wrapper
 import System.Mail.Notmuch.Arrow
 
-import Control.Arrow
-import Control.Arrow.ArrowList
-import Control.Arrow.ArrowIO
-
 newtype MsgId = MsgId { unMsgId :: String }
 
 class Equiv a b where
@@ -97,28 +93,28 @@ getDirectoryNmA :: NotmuchArrow s FilePath (Directory s)
 getDirectoryNmA = oneShotA getDirectoryNm
 getDirectoryNm :: Database s -> (Const FilePath s) -> IO (Either StatusCode
                                                                  (Maybe (Directory s)))
-getDirectoryNm dt (Const path) =
-    withCDatabase dt $ \cdb ->
+getDirectoryNm db (Const path) =
+    withCDatabase db $ \cdb ->
     withCString path $ \cpath ->
     alloca $ \dir_ptr -> do
     status <- c_database_get_directory cdb cpath dir_ptr
     if status /= success
     then return $ Left status
-    else do dir <- peek dir_ptr >>= makeDirectory cdb
+    else do dir <- peek dir_ptr >>= makeDirectory db
             return $ Right $ Just dir
 
 addMessageNmA :: NotmuchArrow s FilePath (Message s)
 addMessageNmA = oneShotA addMessageNm
 addMessageNm :: Database s -> (Const FilePath s) -> IO (Either StatusCode
                                                                (Maybe (Message s)))
-addMessageNm dt (Const path) =
-    withCDatabase dt $ \cdb ->
+addMessageNm db (Const path) =
+    withCDatabase db $ \cdb ->
     withCString path $ \cpath ->
     alloca $ \msg_ptr -> do
     status <- c_database_add_message cdb cpath msg_ptr
     if status /= success && status /= duplicate_message_id
     then return $ Left status
-    else do msg <- peek msg_ptr >>= makeMessage (Right cdb)
+    else do msg <- peek msg_ptr >>= makeMessage (Right db)
             return $ Right $ Just msg
 
 rmMessageNmA :: NotmuchArrow s FilePath ()
@@ -136,8 +132,8 @@ rmMessageNm dt (Const path) =
 findMessageNmA :: NotmuchArrow s MsgId (Message s)
 findMessageNmA = oneShotA findMessageNm
 findMessageNm :: Database s -> Const MsgId s -> IO (Either StatusCode (Maybe (Message s)))
-findMessageNm dt (Const (MsgId mid)) =
-    withCDatabase dt $ \cdb ->
+findMessageNm db (Const (MsgId mid)) =
+    withCDatabase db $ \cdb ->
     withCString mid $ \cmid ->
     alloca $ \msg_ptr -> do
     status <- c_database_find_message cdb cmid msg_ptr
@@ -146,15 +142,15 @@ findMessageNm dt (Const (MsgId mid)) =
     else do cmsg <- peek msg_ptr
             if unCMessage cmsg == nullPtr
             then return $ Right Nothing
-            else do msg <- makeMessage (Right cdb) cmsg
+            else do msg <- makeMessage (Right db) cmsg
                     return $ Right $ Just msg
 
 findMessageByFilenameNmA :: NotmuchArrow s FilePath (Message s)
 findMessageByFilenameNmA = oneShotA findMessageByFilenameNm
 findMessageByFilenameNm :: Database s -> Const FilePath s
                         -> IO (Either StatusCode (Maybe (Message s)))
-findMessageByFilenameNm dt (Const path) =
-    withCDatabase dt $ \cdb ->
+findMessageByFilenameNm db (Const path) =
+    withCDatabase db $ \cdb ->
     withCString path $ \cpath ->
     alloca $ \msg_ptr -> do
     status <- c_database_find_message_by_filename cdb cpath msg_ptr
@@ -163,7 +159,7 @@ findMessageByFilenameNm dt (Const path) =
     else do cmsg <- peek msg_ptr
             if unCMessage cmsg == nullPtr
             then return $ Right Nothing
-            else do msg <- makeMessage (Right cdb) cmsg
+            else do msg <- makeMessage (Right db) cmsg
                     return $ Right $ Just msg
 
 msgHeaderNmA :: String -> NotmuchArrow s (Message s) String
@@ -178,4 +174,91 @@ msgHeaderNm hd _ msg =
     then return $ Left null_pointer
     else do hdval  <- peekCString chdval
             return $ Right $ Just $ Const hdval
+
+arrowOfIterator :: forall a a' b c c' s
+                 . (Equiv (a s) a', Equiv (c s) c')
+                => (Database s -> (a s) -> IO (Either StatusCode (b s))) -- Initialisation
+                -> ((b s) -> IO (Maybe (c s)))       -- Reading
+                -> ((b s) -> IO (b s))               -- next (can render invalid the
+                                                     --       previous value)
+                -> NotmuchArrow s a' c'
+arrowOfIterator int rd nxt = NmA arrow_fun Nothing
+ where arrow_fun :: Database s -> a' -> (Maybe (b s))
+                 -> IO (Either ErrorCode (Maybe (c', Maybe (b s))))
+       arrow_fun db x Nothing    = do
+           eacc <- int db (lEquiv x)
+           case eacc of
+               Left scode -> return $ Left $ statusToErrorCode scode
+               Right acc  -> arrow_fun db x (Just acc)
+       arrow_fun _  _ (Just acc) = do
+           val <- rd acc
+           case val of
+             Nothing   -> return $ Right Nothing
+             Just nval -> nxt acc
+                      >>= \nacc -> return $ Right $ Just (rEquiv nval, Just nacc)
+
+dbAllTags :: NotmuchArrow s () String
+dbAllTags = arrowOfIterator int rd nxt
+ where int :: Database s -> Const () s -> IO (Either StatusCode (Tags s))
+       int db _ =
+           withCDatabase db $ \cdb -> do
+           ctags <- c_database_get_all_tags cdb
+           tags  <- makeTags (Right $ Right db) ctags
+           return $ Right tags
+
+       rd :: Tags s -> IO (Maybe (Const String s))
+       rd tags =
+           withCTags tags $ \ctags -> do
+           b <- c_tags_valid ctags
+           if b == 0
+           then return Nothing
+           else c_tags_get ctags >>= actPtr peekCString
+                                 >>= return . Just . Const
+           
+       nxt :: Tags s -> IO (Tags s)
+       nxt tags =
+           withCTags tags $ \ctags -> do
+           c_tags_move_to_next ctags
+           return tags
+
+dbQueryNmA :: QueryExclude -> NotmuchArrow s String (Query s)
+dbQueryNmA fl = oneShotA $ dbQueryNm fl
+dbQueryNm :: QueryExclude -> Database s -> Const String s
+          -> IO (Either StatusCode (Maybe (Query s)))
+dbQueryNm fl db (Const str) =
+    withCDatabase db $ \cdb ->
+    withCString str  $ \cstr -> do
+    cquery <- c_query_create cdb cstr
+    c_query_set_omit_excluded cquery (queryExcludeToExcludeFlag fl)
+    query  <- makeQuery db cquery
+    return $ Right $ Just query
+
+queryThreadsNmA :: QuerySort -> NotmuchArrow s (Query s) (Thread s)
+queryThreadsNmA srt = arrowOfIterator int rd nxt
+ where int :: Database s -> (Query s) -> IO (Either StatusCode (Threads s))
+       int _ query =
+           withCQuery query $ \cquery ->
+           alloca $ \threads_ptr -> do 
+               c_query_set_sort cquery $ querySortToSortOrder srt
+               scode <- c_query_search_threads cquery threads_ptr
+               if scode /= success
+               then return $ Left scode
+               else do cthreads <- peek threads_ptr
+                       threads  <- makeThreads query cthreads
+                       return $ Right threads
+
+       rd :: Threads s -> IO (Maybe (Thread s))
+       rd threads =
+           withCThreads threads $ \cthreads -> do
+           b <- c_threads_valid cthreads
+           if b == 0
+           then return Nothing
+           else c_threads_get cthreads >>= makeThread threads
+                                       >>= return . Just
+
+       nxt :: Threads s -> IO (Threads s)
+       nxt threads =
+           withCThreads threads $ \cthreads -> do
+           c_threads_move_to_next cthreads
+           return threads
 

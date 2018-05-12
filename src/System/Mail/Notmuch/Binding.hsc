@@ -203,7 +203,7 @@ foreign import ccall "notmuch.h notmuch_query_add_tag_exclude"
 foreign import ccall "notmuch.h notmuch_query_search_threads_st"
     c_query_search_threads :: CQuery
                            -> Ptr CThreads
-                           -> StatusCode
+                           -> IO StatusCode
 
 foreign import ccall "notmuch.h &notmuch_threads_destroy"
     c_threads_destructor :: FunPtr (Ptr CThreads -> IO ())
@@ -211,7 +211,7 @@ foreign import ccall "notmuch.h &notmuch_threads_destroy"
 foreign import ccall "notmuch.h notmuch_query_search_messages_st"
     c_query_search_messages :: CQuery
                             -> Ptr CMessages
-                            -> StatusCode
+                            -> IO StatusCode
 
 foreign import ccall "notmuch.h &notmuch_messages_destroy"
     c_messages_destructor :: FunPtr (Ptr CMessages -> IO ())

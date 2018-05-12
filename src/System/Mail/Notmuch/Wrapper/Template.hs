@@ -81,7 +81,8 @@ makeGBWithDep name dep = return . return $
                                            (ConT $ mkName $ "C" <> name)
                                     )
                                   , ( Bang NoSourceUnpackedness SourceStrict
-                                    , ConT $ mkName dep
+                                    , AppT (ConT $ mkName dep)
+                                           (VarT $ mkName "s")
                                     )
                                   ]
           ]
@@ -89,7 +90,7 @@ makeGBWithDep name dep = return . return $
 
 makeGBDep :: String -> String -> String -> Q [Dec]
 makeGBDep name dep destr = do
-    tp <- [t|$(mkConT dep)
+    tp <- [t|$(mkConT dep) $(mkVarT "s")
           -> $(mkConT $ "C" <> name)
           -> IO ($(mkConT name) $(mkVarT "s"))
           |]
